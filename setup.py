@@ -5,17 +5,17 @@ import os
 # Packages using the same name here cannot be installed together
 
 version_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 
-                            "freecad", "workbench_starterkit", "version.py")
+                            "freecad", "airfoil", "version.py")
 with open(version_path) as fp:
     exec(fp.read())
 
-setup(name='freecad.workbench_starterkit',
+setup(name='freecad.airfoil',
       version=str(__version__),
-      packages=['freecad',
-                'freecad.workbench_starterkit'],
+      packages=['airfoil', 
+                'freecad',
+                'freecad.airfoil_gui'],
       maintainer="looooo",
       maintainer_email="sppedflyer@gmail.com",
-      url="https://github.com/FreeCAD/Workbench-Starterkit",
-      description="template for a freecad extensions, installable with pip",
-      install_requires=['numpy'], # should be satisfied by FreeCAD's system dependencies already
+      url="airfoil-workbench",
+      description="aifoil-module and airfoil workbench for freecad, installable with pip",
       include_package_data=True)
