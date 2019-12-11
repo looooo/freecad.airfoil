@@ -64,6 +64,7 @@ class AirfoilTool(object):
 
     def trefftz_dialog(self):
         dialog = QtGui.QDialog()
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Minimum)
         layout = QtGui.QFormLayout(dialog)
         dialog.setLayout(layout)
         button_box = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
@@ -100,7 +101,7 @@ class AirfoilTool(object):
         layout.addRow(QtGui.QLabel("imag number"), q_imag_number)
         layout.addRow(QtGui.QLabel("tau"), q_tau)
         layout.addRow(QtGui.QLabel("numpoints per side"), q_numpoints)
-        layout.addWidget(button_box)
+        layout.addRow(button_box)
         dialog.exec()
 
     def naca_dialog(self):
@@ -127,11 +128,12 @@ class AirfoilTool(object):
 
         layout.addRow(QtGui.QLabel("naca digits [string]"), q_nacadigits)
         layout.addRow(QtGui.QLabel("numpoints per side"), q_numpoints)
-        layout.addWidget(button_box)
+        layout.addRow(button_box)
         dialog.exec()
 
     def vandevooren_dialog(self):
         dialog = QtGui.QDialog()
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Minimum)
         layout = QtGui.QFormLayout(dialog)
         dialog.setLayout(layout)
         button_box = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
@@ -162,7 +164,7 @@ class AirfoilTool(object):
         layout.addRow(QtGui.QLabel("tau"), q_tau)
         layout.addRow(QtGui.QLabel("epsilon"), q_epsilon)
         layout.addRow(QtGui.QLabel("numpoints per side"), q_numpoints)
-        layout.addWidget(button_box)
+        layout.addRow(button_box)
         dialog.exec()
 
     def accept(self):
@@ -191,18 +193,6 @@ class ParafoilCommand(object):
                 'MenuText': "create a parametric airfoil defined by 2 nurbs-curves",
                 'ToolTip': "create a parametric airfoil defined by 2 nurbs-curves"}
 
-class ParaFoilCalibrate(object):
-    def IsActive(self):
-        return bool(app.activeDocument())
-
-    def Activated(self):
-        # create a task with different buttons
-        commands.calibrate_parafoil()
-
-    def GetResources(self):
-        return {'Pixmap': os.path.join(RESOURCE_PATH, "calibrate.svg"),
-                'MenuText': "align a parafoil to an airfoil (fit the bspline to the aifoil-data)",
-                'ToolTip': "align a parafoil to an airfoil (fit the bspline to the aifoil-data)"}
 
 
 class ParaFoilOptimize(object):

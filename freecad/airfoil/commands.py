@@ -49,12 +49,15 @@ def make_parafoil():
     app.activeDocument().recompute()
     return obj
 
-def calibrate_parafoil():
-    selection = gui.Selection.getSelection()
-    assert len(selection) == 2
-    parafoil_obj = selection[0]
-    airfoil_obj = selection[1]
-    assert isinstance(parafoil_obj.Proxy, airfoil_proxies.ParafoilProxy)
-    assert isinstance(airfoil_obj.Proxy, airfoil_proxies.AirfoilProxy)
-    parafoil_obj.Proxy.calibrate(parafoil_obj, airfoil_obj.Proxy.get_airfoil(airfoil_obj))
+def calibrate_parafoil(calibrate_x=False, calibrate_y=True, calibrate_w=False, parafoil=None, airfoil=None):
+    if not all([bool(parafoil), bool(airfoil)]):
+        selection = gui.Selection.getSelection()
+        assert len(selection) == 2
+        parafoil = selection[0]
+        airfoil = selection[1]
+    assert isinstance(parafoil.Proxy, airfoil_proxies.ParafoilProxy)
+    assert isinstance(airfoil.Proxy, airfoil_proxies.AirfoilProxy)
+    parafoil.Proxy.calibrate(parafoil, 
+                                 airfoil.Proxy.get_airfoil(airfoil),
+                                 calibrate_x, calibrate_y, calibrate_w)
     app.activeDocument().recompute()

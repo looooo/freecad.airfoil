@@ -251,7 +251,7 @@ class ParafoilProxy(Airfoil):
         if calibrate_x:
             lower_bounds += x_lower_bounds
             upper_bounds += x_upper_bounds
-            mpping += self.x_mapping
+            mapping += self.x_mapping
         if calibrate_y:
             lower_bounds += y_lower_bounds
             upper_bounds += y_upper_bounds

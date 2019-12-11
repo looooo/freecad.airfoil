@@ -81,31 +81,70 @@ class ConstrainedXMarker(ConstrainedMarker):
 class ParafoilModifier(object):
     def __init__(self, obj):
         self.obj = obj  # self.obj.Proxy --> parafoil_proxy
+        self.obj.ViewObject.hide()
         self.form = []
         self.scene = gui.activeDocument().activeView().getSceneGraph()
         self.rm = gui.activeDocument().activeView().getViewer().getSoRenderManager()
 
+        # widget for modification
         self.base_widget = QtGui.QWidget()
         self.form.append(self.base_widget)
         self.layout = QtGui.QFormLayout(self.base_widget)
-        self.base_widget.setWindowTitle("parafoil modifier")
+        self.base_widget.setWindowTitle("modifier")
 
+        # widget for calibration
+        self.calibration_widget = QtGui.QWidget()
+        self.form.append(self.calibration_widget)
+        self.calibration_layout = QtGui.QFormLayout(self.calibration_widget)
+        self.calibration_widget.setWindowTitle("calibration")
+
+        self.setup_qt()
+        self.setup_pivy()
+
+    def setup_qt(self):
+        # create checkboxes: x, y, w
+        self.q_calibrate_x = QtGui.QCheckBox("calibrate x-values")
+        self.q_calibrate_y = QtGui.QCheckBox("calibrate y-values")
+        self.q_calibrate_w = QtGui.QCheckBox("calibrate weights")
+
+        self.q_calibrate_y.setChecked(True)
+
+        # create button calibrate
+        self.q_run = QtGui.QPushButton("run")
+        self.q_run.clicked.connect(self._calibrate)
+
+        self.layout.addWidget(self.q_calibrate_x)
+        self.layout.addWidget(self.q_calibrate_y)
+        self.layout.addWidget(self.q_calibrate_w)
+        self.layout.addWidget(self.q_run)
+
+
+    def setup_pivy(self):
         # scene container
         self.task_separator = coin.SoSeparator()
         self.task_separator.setName('task_seperator')
         self.scene += self.task_separator
         self.spline_sep, self.upper_poles, self.lower_poles = self._get_bspline()
         self.task_separator += self.spline_sep
+        self.setup_bspline()
 
-        upper_array = obj.Proxy.get_upper_array(obj)
-        lower_array = obj.Proxy.get_lower_array(obj)
+
+    def setup_bspline(self):
+        # create a new interaction seperator
+        if hasattr(self, "interaction_sep"):
+            self.interaction_sep.unregister()
+            self.task_separator -= self.interaction_sep
+        self.interaction_sep = graphics.InteractionSeparator(self.rm)
+
+        upper_array = self.obj.Proxy.get_upper_array(self.obj)
+        lower_array = self.obj.Proxy.get_lower_array(self.obj)
+
         upper_array_1 = copy.copy(upper_array)
         upper_array_1[:3] *= upper_array_1[3]
         lower_array_1 = copy.copy(lower_array)
         lower_array_1[:3] *= lower_array_1[3]
         self.upper_poles.point.setValues(0, 9, upper_array_1.T)
         self.lower_poles.point.setValues(0, 9, lower_array_1.T)
-        self.interaction_sep = graphics.InteractionSeparator(self.rm)
         for i, mat in enumerate([upper_array, lower_array]):
             if i == 0:
                 poles = self.upper_poles
@@ -119,6 +158,7 @@ class ParafoilModifier(object):
                 else:
                     marker = ConstrainedMarker([col[:-1]], col[-1], poles, j, dynamic=True)
                 self.interaction_sep += marker
+
         self.task_separator += self.interaction_sep
         self.interaction_sep.register()
 
@@ -153,31 +193,47 @@ class ParafoilModifier(object):
         return (spline_sep, upper_poles, lower_poles)
 
 
-    def setup_pivy(self):
-        # create 2 spline objects
-        # create a modifier seperator
-        # create interactive points
-        pass
+    def _calibrate(self):
+        from freecad.airfoil import commands
+        selection = gui.Selection.getSelection()
+        assert len(selection) == 1
+        other_foil = selection[0]
+        upper_array_temp = self.obj.upper_array
+        lower_array_temp = self.obj.lower_array
+        self.set_parafoil_from_current()
+        if self.q_calibrate_x.isChecked() or self.q_calibrate_y.isChecked() or self.q_calibrate_w.isChecked():
+            commands.calibrate_parafoil(self.q_calibrate_x.isChecked(), 
+                                        self.q_calibrate_y.isChecked(), 
+                                        self.q_calibrate_w.isChecked(),
+                                        self.obj, other_foil)
 
-    def setup_qt(self):
-        # create a table of inputs (x, y, w)
-        # create input for te-gap
-        pass
+        # set the poles of the coin bspline
+        self.setup_bspline()
+        
+        # reset the poles of the freecad object (parafoil)
+        self.obj.upper_array = upper_array_temp
+        self.obj.lower_array = lower_array_temp
+        app.activeDocument().recompute()
 
 
-    def accept(self):
-        self.scene -= self.task_separator
+    def set_parafoil_from_current(self):
         upper_array = np.array([list(point) for point in self.upper_poles.point.getValues()]).T
         lower_array = np.array([list(point) for point in self.lower_poles.point.getValues()]).T
         upper_array[:3] /= upper_array[3]
         lower_array[:3] /= lower_array[3]
         self.obj.upper_array = upper_array.tolist()
         self.obj.lower_array = lower_array.tolist()
-        app.activeDocument().recompute()
 
+
+    def accept(self):
+        self.scene -= self.task_separator
+        self.set_parafoil_from_current()
+        app.activeDocument().recompute()
+        self.obj.ViewObject.show()
         gui.SendMsgToActiveView("ViewFit")
         gui.Control.closeDialog()
 
     def reject(self):
         self.scene -= self.task_separator
+        self.obj.ViewObject.show()
         gui.Control.closeDialog()
