@@ -227,6 +227,7 @@ class ParafoilProxy(Airfoil):
                 vertex = part.Vertex(x, y, 0.)
                 dist = vertex.distToShape(edge)[0]
                 residuals.append(dist)
+            del spline, edge
             return residuals
 
         start_values = self._get_values(mapping, mat)

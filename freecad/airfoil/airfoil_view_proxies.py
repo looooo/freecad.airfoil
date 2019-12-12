@@ -113,10 +113,10 @@ class ParafoilModifier(object):
         self.q_run = QtGui.QPushButton("run")
         self.q_run.clicked.connect(self._calibrate)
 
-        self.layout.addWidget(self.q_calibrate_x)
-        self.layout.addWidget(self.q_calibrate_y)
-        self.layout.addWidget(self.q_calibrate_w)
-        self.layout.addWidget(self.q_run)
+        self.calibration_layout.addWidget(self.q_calibrate_x)
+        self.calibration_layout.addWidget(self.q_calibrate_y)
+        self.calibration_layout.addWidget(self.q_calibrate_w)
+        self.calibration_layout.addWidget(self.q_run)
 
 
     def setup_pivy(self):
@@ -171,7 +171,7 @@ class ParafoilModifier(object):
         draw_style = coin.SoDrawStyle()
         draw_style.lineWidth = 2
         complexity = coin.SoComplexity()
-        complexity.value = 0.5
+        complexity.value = 1.
         spline_sep = coin.SoSeparator()
         upper_sep = coin.SoSeparator()
         lower_sep = coin.SoSeparator()
