@@ -77,12 +77,31 @@ class Airfoil(object):
     def numpoints(self, numpoints):
         self.x_values = self.cos_2_distribution(numpoints)
 
-    def find_nose(self):
-        i = 0
-        while (self.coordinates[i + 1][0] < self.coordinates[i][0]
-               and i < len(self.coordinates)):
-            i += 1
-        self.noseindex = i
+    def find_nose(self, method="max-curvature"):
+        if method == "min-x-value":
+            i = 0
+            while (self.coordinates[i + 1][0] < self.coordinates[i][0]
+                   and i < len(self.coordinates)):
+                i += 1
+            self.noseindex = i
+        elif method == "max-curvature":
+            curvature = self.get_curvature()
+            self.noseindex = np.argmax(curvature)
+
+
+    def get_curvature(self):
+        # https://math.stackexchange.com/a/213678
+        A = self.coordinates[0:-3]
+        B = self.coordinates[1:-2]
+        C = self.coordinates[2:-1]
+        AB = np.linalg.norm(B - A, axis=1)
+        BC = np.linalg.norm(C - B, axis=1)
+        AC = np.linalg.norm(C - A, axis=1)
+        curvature = 2 * abs(np.cross(B - A, C - A, axis=1)) / (AB * BC * AC)
+        curvature = np.array([0.] + curvature.tolist() + [0.])
+        return curvature
+
+
 
     def normalize(self, noseindex=None):
         """
@@ -163,8 +182,8 @@ class Airfoil(object):
             lower.append([x + thickness_this * sintheta,
                           mean_camber - thickness_this * costheta])
         profile = cls(upper + lower[::-1][1:], name="NACA_" + str(naca))
-        profile.find_nose()
-        profile.normalize()
+        # profile.find_nose()
+        # profile.normalize()
         return profile
 
     @classmethod
@@ -176,7 +195,7 @@ class Airfoil(object):
         profile = cls(profile, "joukowsky_" + str(midpoint))
         profile.find_nose()
         profile.normalize()
-        profilce.move_nose()
+        # profilce.move_nose()
         profile.numpoints = numpoints
         return profile
 
@@ -189,8 +208,7 @@ class Airfoil(object):
         profile = cls(profile, "VanDeVooren_tau=" + str(tau) + "_epsilon=" + str(epsilon))
         profile.find_nose()
         profile.normalize()
-        profile.move_nose()
-        profile.numpoints = numpoints
+        # profile.move_nose()
         return profile
 
     @classmethod
@@ -202,8 +220,7 @@ class Airfoil(object):
         profile = cls(profile, "TrefftzKuttaAirfoil_m=" + str(midpoint) + "_tau=" + str(tau))
         profile.find_nose()
         profile.normalize()
-        profile.move_nose()
-        profile.numpoints = numpoints
+        # profile.move_nose()
         return profile
 
     @classmethod
@@ -218,8 +235,8 @@ class Airfoil(object):
                 else:
                     name = line
         airfoil = cls(profile, name)
-        airfoil.normalize()
-        airfoil.move_nose()
+        # airfoil.normalize()
+        # airfoil.move_nose()
         return airfoil
 
     @classmethod

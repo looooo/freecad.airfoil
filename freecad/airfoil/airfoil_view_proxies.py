@@ -3,13 +3,15 @@ import copy
 import numpy as np
 from PySide import QtGui
 from pivy import coin
-from pivy import graphics
+from pivy import graphics, utils
 
 from freecad import app
 import FreeCADGui as gui
 import Part as part
 
 from freecad.airfoil import RESOURCE_PATH
+
+utils.add_marker_from_svg(os.path.join(RESOURCE_PATH, "custom_marker.svg"), "AIRFOIL_MARKER",  20)
 
 class ViewProviderAirfoil(object):
     def __init__(self, vobj):
@@ -46,11 +48,13 @@ class ViewProviderParafoil(object):
         return None
 
 class ConstrainedMarker(graphics.Marker):
-    def __init__(self, points, weight, poles, pole_index, dynamic=False):
+    def __init__(self, points, weight, poles, pole_index, upper, dynamic=False):
         super(ConstrainedMarker, self).__init__(points, dynamic)
         self.poles = poles
         self.pole_index = pole_index
         self.weight = weight
+        self.upper = upper
+        self.marker.markerIndex = coin.SoMarkerSet.AIRFOIL_MARKER
 
     @property
     def points(self):
@@ -71,11 +75,28 @@ class ConstrainedXMarker(ConstrainedMarker):
 
     @points.setter
     def points(self, points):
-        point = [0., points[0][1], 0.]
+        point = [points[0][0], points[0][1], 0.]
         self.data.point.setValues(0, 1, [point]) 
         if hasattr(self, "poles"):
             self.poles.point[self.pole_index].setValue([*(np.array(point) * self.weight), self.weight])
             self.poles.point = self.poles.point
+        if hasattr(self, "tangent_point"):
+            self.tangent_point.update_by_other(point)
+
+    def set_tangent_point(self, other):
+        self.tangent_point = other
+
+    def update_by_other(self, point):
+        r = np.linalg.norm(np.array(self.points[0]))
+        direction = - np.array(point)
+        direction /= np.linalg.norm(direction)
+        pos = (direction * r).tolist()
+        self.data.point.setValues(0, 1, [pos]) 
+        if hasattr(self, "poles"):
+            self.poles.point[self.pole_index].setValue([*(np.array(pos) * self.weight), self.weight])
+            self.poles.point = self.poles.point
+
+
 
 
 class ParafoilModifier(object):
@@ -102,6 +123,18 @@ class ParafoilModifier(object):
         self.setup_pivy()
 
     def setup_qt(self):
+        # add a table witht the pole-values
+        self.upper_pole_table = QtGui.QTableWidget(7, 3)
+        for i, dim in enumerate(["x", "y", "w"]):
+            self.upper_pole_table.setHorizontalHeaderItem(i, QtGui.QTableWidgetItem(dim))
+        self.layout.addWidget(self.upper_pole_table)
+
+
+        self.lower_pole_table = QtGui.QTableWidget(7, 3)
+        for i, dim in enumerate(["x", "y", "w"]):
+            self.lower_pole_table.setHorizontalHeaderItem(i, QtGui.QTableWidgetItem(dim))
+        self.layout.addWidget(self.lower_pole_table)
+
         # create checkboxes: x, y, w
         self.q_calibrate_x = QtGui.QCheckBox("calibrate x-values")
         self.q_calibrate_y = QtGui.QCheckBox("calibrate y-values")
@@ -135,6 +168,7 @@ class ParafoilModifier(object):
             self.interaction_sep.unregister()
             self.task_separator -= self.interaction_sep
         self.interaction_sep = graphics.InteractionSeparator(self.rm)
+        self.interaction_sep.selection_changed = self.selection_changed
 
         upper_array = self.obj.Proxy.get_upper_array(self.obj)
         lower_array = self.obj.Proxy.get_lower_array(self.obj)
@@ -145,22 +179,49 @@ class ParafoilModifier(object):
         lower_array_1[:3] *= lower_array_1[3]
         self.upper_poles.point.setValues(0, 9, upper_array_1.T)
         self.lower_poles.point.setValues(0, 9, lower_array_1.T)
+        self.upper_markers = []
+        self.lower_markers = []
+        tangent_points = []
+        k = 0
         for i, mat in enumerate([upper_array, lower_array]):
             if i == 0:
                 poles = self.upper_poles
+                _markers = self.upper_markers
+                upper = True
             else:
                 poles = self.lower_poles
+                _markers = self.lower_markers
+                upper = False
             for j, col in enumerate(mat.T):
                 if j in [0, 8]:
                     marker = graphics.Marker([col[:-1]], dynamic=False)
                 elif (j == 1 and i == 0) or (j == 1 and i == 1):
-                    marker = ConstrainedXMarker([col[:-1]], col[-1], poles, j, dynamic=True)
+                    marker = ConstrainedXMarker([col[:-1]], col[-1], poles, j, upper,  dynamic=True)
+                    tangent_points.append(marker)
                 else:
-                    marker = ConstrainedMarker([col[:-1]], col[-1], poles, j, dynamic=True)
+                    marker = ConstrainedMarker([col[:-1]], col[-1], poles, j, upper, dynamic=True)
+                marker.on_drag.append(self.update_table)
                 self.interaction_sep += marker
+                _markers.append(marker)
+                k += 1
+        tangent_points[0].set_tangent_point(tangent_points[1])
+        tangent_points[1].set_tangent_point(tangent_points[0])
 
         self.task_separator += self.interaction_sep
         self.interaction_sep.register()
+        self.update_table()
+        self.upper_pole_table.cellChanged.connect(self.update_upper_points_by_table)
+        self.lower_pole_table.cellChanged.connect(self.update_lower_points_by_table)
+
+    def selection_changed(self):
+        self.upper_pole_table.clearSelection()
+        self.lower_pole_table.clearSelection()
+        for marker in self.interaction_sep.selected_objects:
+            r = marker.pole_index - 1
+            if marker.upper:
+                self.upper_pole_table.selectRow(r)
+            else:
+                self.lower_pole_table.selectRow(r)
 
 
     def _get_bspline(self):
@@ -184,13 +245,42 @@ class ParafoilModifier(object):
         lower_curve.numControlPoints = 9
         upper_poles = coin.SoCoordinate4()
         lower_poles = coin.SoCoordinate4()
+        upper_line_set = coin.SoLineSet()
+        lower_line_set = coin.SoLineSet()
 
         # no need to set degree. Should be computed by numControlPoints and knotvector
 
-        upper_sep += [draw_style, complexity, upper_poles, upper_curve]
-        lower_sep += [draw_style, complexity, lower_poles, lower_curve]
+        upper_sep += [complexity, upper_poles, upper_line_set, draw_style, upper_curve]
+        lower_sep += [complexity, lower_poles, lower_line_set, draw_style, lower_curve]
         spline_sep += [upper_sep, lower_sep]
         return (spline_sep, upper_poles, lower_poles)
+
+    def update_table(self):
+        self.upper_pole_table.blockSignals(True)
+        self.lower_pole_table.blockSignals(True)
+        upper_array, lower_array = self.get_mat_from_current()
+        for i, row in enumerate(upper_array.T[1:-1]):
+            for j, element in enumerate(row[[0,1,3]]):
+                self.upper_pole_table.setItem(i, j, QtGui.QTableWidgetItem(str(round(element,5))))
+        for i, row in enumerate(lower_array.T[1:-1]):
+            for j, element in enumerate(row[[0,1,3]]):
+                self.lower_pole_table.setItem(i, j, QtGui.QTableWidgetItem(str(round(element,5))))
+        self.upper_pole_table.blockSignals(False)
+        self.lower_pole_table.blockSignals(False)
+
+    def update_upper_points_by_table(self, row, col):
+        x = float(self.upper_pole_table.item(row, 0).text())
+        y = float(self.upper_pole_table.item(row, 1).text())
+        w = float(self.upper_pole_table.item(row, 2).text())
+        self.upper_markers[row + 1].weight = w
+        self.upper_markers[row + 1].points = [[x, y, 0.]]
+
+    def update_lower_points_by_table(self, row, col):
+        x = float(self.lower_pole_table.item(row, 0).text())
+        y = float(self.lower_pole_table.item(row, 1).text())
+        w = float(self.lower_pole_table.item(row, 2).text())
+        self.lower_markers[row + 1].weight = w
+        self.lower_markers[row + 1].points = [[x, y, 0.]]
 
 
     def _calibrate(self):
@@ -216,11 +306,16 @@ class ParafoilModifier(object):
         app.activeDocument().recompute()
 
 
-    def set_parafoil_from_current(self):
+    def get_mat_from_current(self):
         upper_array = np.array([list(point) for point in self.upper_poles.point.getValues()]).T
         lower_array = np.array([list(point) for point in self.lower_poles.point.getValues()]).T
         upper_array[:3] /= upper_array[3]
         lower_array[:3] /= lower_array[3]
+        return (upper_array, lower_array)
+
+
+    def set_parafoil_from_current(self):
+        upper_array, lower_array = self.get_mat_from_current()
         self.obj.upper_array = upper_array.tolist()
         self.obj.lower_array = lower_array.tolist()
 

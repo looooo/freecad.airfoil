@@ -107,18 +107,18 @@ class ParafoilProxy(Airfoil):
 
         # defaulta airfoil
         upper_array = [
-           [0.  , 0.  , 0.01, 0.07, 0.18, 0.36, 0.5 , 0.71, 1.  ],
-           [0.  , 0.02, 0.05, 0.09, 0.1 , 0.08, 0.06, 0.04, 0.  ],
-           [0.  , 0.  , 0.  , 0.  , 0.  , 0.  , 0.  , 0.  , 0.  ],
-           [1.  , 1.  , 1  , 1.  , 1.  , 1.  , 1.  , 1.  , 1.  ]
-           ]
+            [0.   , 0.   , 0.01 , 0.07 , 0.2  , 0.5  , 0.7  , 0.85 , 1.   ],
+            [0.   , 0.011, 0.029, 0.05 , 0.082, 0.083, 0.051, 0.034, 0.   ],
+            [0.   , 0.   , 0.   , 0.   , 0.   , 0.   , 0.   , 0.   , 0.   ],
+            [1.   , 1.   , 1.   , 1.   , 1.   , 1.   , 1.   , 1.   , 1.   ]
+            ]
 
         lower_array = [
-           [ 0. , 0.  , 0.03, 0.1 , 0.31, 0.53, 0.71, 0.84, 1.  ],
-           [ 0. ,-0.02,-0.04,-0.06,-0.07,-0.06,-0.04,-0.02, 0.  ],
-           [ 0. , 0.  , 0.  , 0.  , 0.  , 0.  , 0.  , 0.  , 0.  ],
-           [ 1. , 1.  , 1.  , 1.  , 1.  , 1.  , 1.  , 1.  , 1.  ]
-           ]
+            [ 0.   ,  0.   ,  0.01 ,  0.07 ,  0.2  ,  0.5  ,  0.7  ,  0.85 ,  1.   ],
+            [ 0.   , -0.008, -0.022, -0.038, -0.046, -0.036, -0.021, -0.012,  0.   ],
+            [ 0.   ,  0.   ,  0.   ,  0.   ,  0.   ,  0.   ,  0.   ,  0.   ,  0.   ],
+            [ 1.   ,  1.   ,  1.   ,  1.   ,  1.   ,  1.   ,  1.   ,  1.   ,  1.   ]
+            ]
 
         obj.addProperty("App::PropertyPythonObject", "upper_array", "airfoil properties", "x, y, z, w of upper poles")
         obj.addProperty("App::PropertyPythonObject", "lower_array", "airfoil properties", "x, y, z, w of lower poles")
@@ -209,7 +209,13 @@ class ParafoilProxy(Airfoil):
         sets values of mat by a flat vector of values (needs to have same length as mapping)
         """
         for i, m in enumerate(mapping):
-            mat[m[0]][m[1]] = values[i]
+            if m == [1, 1]:
+                # compute the corresponsing x-value
+                x, y, z, w = mat.T[1]
+                mat[0][1] = x * values[i] / y
+                mat[1][1] = values[i]
+            else:
+                mat[m[0]][m[1]] = values[i]
         return mat
 
 
@@ -227,7 +233,6 @@ class ParafoilProxy(Airfoil):
                 vertex = part.Vertex(x, y, 0.)
                 dist = vertex.distToShape(edge)[0]
                 residuals.append(dist)
-            del spline, edge
             return residuals
 
         start_values = self._get_values(mapping, mat)
@@ -270,4 +275,3 @@ class ParafoilProxy(Airfoil):
         new_lower_mat = self._calibrate_one_side(lower_array, mapping, bounds, airfoil.get_lower_data())
         obj.upper_array = new_upper_mat.tolist()
         obj.lower_array = new_lower_mat.tolist()
-
