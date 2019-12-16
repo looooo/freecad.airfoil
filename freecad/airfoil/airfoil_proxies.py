@@ -4,7 +4,7 @@ import numpy as np
 from freecad import app
 import Part as part
 
-from airfoil import Airfoil
+from airfoil import Airfoil, XfoilStudy
 from freecad.airfoil import RESOURCE_PATH
 
 
@@ -13,7 +13,6 @@ class AirfoilProxy(object):
     A Proxy Object for an airfoil given by a path
     """
     def __init__(self, obj, fn=None):
-        fn = fn or os.path.join(RESOURCE_PATH, "clark_y.dat")
         obj.addProperty("App::PropertyFile", "filename", "airfoil properties", "airfoil name")
         obj.Proxy = self
         self._airfoil  = None
@@ -41,6 +40,17 @@ class AirfoilProxy(object):
 
     def __setstate__(self, state):
         return None
+
+class LinkedAirfoilProxy(AirfoilProxy):
+    def __init__(self, obj, parafoil, numpoints:int=50):
+        obj.addProperty("App::PropertyLink", "parafoil", "airfoil properties", "link to parafoil")
+        obj.addProperty("App::PropertyInteger", "numpoints", "airfoil properties", "number of coordiantes per side")
+        obj.parafoil = parafoil
+        obj.numpoints = numpoints
+        obj.Proxy = self
+
+    def get_airfoil(self, obj):
+        return obj.parafoil.Proxy.get_airfoil(obj.parafoil, obj.numpoints)
 
 
 class JoukowskyProxy(AirfoilProxy):
@@ -127,6 +137,10 @@ class ParafoilProxy(Airfoil):
         obj.lower_array = lower_array
         obj.Proxy = self
 
+    def get_airfoil(self, obj, numpoints=50, distribution=None):
+        coordinates = self.discretize(obj, numpoints)
+        return Airfoil(coordinates)
+
     def get_upper_array(self, obj):
         return np.array(obj.upper_array)
 
@@ -185,6 +199,17 @@ class ParafoilProxy(Airfoil):
             i += 1
         return bs
 
+    def discretize(self, obj, numpoints=100, distribution=None):
+        """returns an Airfoil"""
+        upper_spline = self._spline_from_mat(self.get_upper_array(obj))
+        lower_spline = self._spline_from_mat(self.get_lower_array(obj))
+        upper_points = upper_spline.discretize(numpoints)
+        lower_points = lower_spline.discretize(numpoints)
+        upper_points = [[i[0], i[1]] for i in upper_points]
+        lower_points = [[i[0], i[1]] for i in lower_points]
+        coordinates = upper_points[::-1] + lower_points[1:]
+        return np.array(coordinates)
+
 
     def execute(self, obj):
         upper_array = self.get_upper_array(obj)
@@ -236,7 +261,7 @@ class ParafoilProxy(Airfoil):
             return residuals
 
         start_values = self._get_values(mapping, mat)
-        best = least_squares(cost_function, start_values, bounds=bounds, method="dogbox", args=(mat, coordinates))
+        best = least_squares(cost_function, start_values, method="lm", args=(mat, coordinates))
         mat = self._set_values(mapping, mat, best.x)
         return mat
 
@@ -275,3 +300,12 @@ class ParafoilProxy(Airfoil):
         new_lower_mat = self._calibrate_one_side(lower_array, mapping, bounds, airfoil.get_lower_data())
         obj.upper_array = new_upper_mat.tolist()
         obj.lower_array = new_lower_mat.tolist()
+
+
+
+class AerodynamicsStudy(object):
+    def __init__(self, obj, airfoil):
+        obj.addProperty("App::PropertyLink", "airfoil", "group", "the foil which is analyzed")
+        obj.addProperty("App::PropertyPythonObject", "data", "group", "data is stored in this table")
+        obj.airfoil = airfoil
+        obj.Proxy = self

@@ -10,6 +10,7 @@ import FreeCADGui as gui
 import Part as part
 
 from freecad.airfoil import RESOURCE_PATH
+from freecad.airfoil import airfoil_proxies
 
 utils.add_marker_from_svg(os.path.join(RESOURCE_PATH, "custom_marker.svg"), "AIRFOIL_MARKER",  20)
 
@@ -34,12 +35,21 @@ class ViewProviderParafoil(object):
         return os.path.join(RESOURCE_PATH, "parafoil.svg")
 
     def setupContextMenu(self, view_obj, menu):
-        action = menu.addAction("modify parafoil") # start an task 
-        action.triggered.connect(lambda f=self.modify_parafoil, arg=view_obj.Object: f(arg))
+        modify = menu.addAction("modify parafoil") 
+        create_airfoil = menu.addAction("airfoil from parafoil")
+        modify.triggered.connect(lambda f=self.modify_parafoil, arg=view_obj.Object: f(arg))
+        create_airfoil.triggered.connect(lambda f=self.airfoil_from_parafoil, arg=view_obj.Object: f(arg))
 
     def modify_parafoil(self, obj):
         modifier = ParafoilModifier(obj)
         gui.Control.showDialog(modifier)
+
+    def airfoil_from_parafoil(self, parafoil):
+        obj = app.ActiveDocument.addObject("Part::FeaturePython", "airfoil")
+        airfoil_proxies.LinkedAirfoilProxy(obj, parafoil)
+        ViewProviderAirfoil(obj.ViewObject)
+        # obj.Label = obj.Proxy.get_name(obj)
+        app.activeDocument().recompute()
 
     def __getstate__(self):
         return None
@@ -95,8 +105,6 @@ class ConstrainedXMarker(ConstrainedMarker):
         if hasattr(self, "poles"):
             self.poles.point[self.pole_index].setValue([*(np.array(pos) * self.weight), self.weight])
             self.poles.point = self.poles.point
-
-
 
 
 class ParafoilModifier(object):
@@ -304,6 +312,7 @@ class ParafoilModifier(object):
         self.obj.upper_array = upper_array_temp
         self.obj.lower_array = lower_array_temp
         app.activeDocument().recompute()
+
 
 
     def get_mat_from_current(self):

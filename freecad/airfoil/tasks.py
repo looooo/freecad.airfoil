@@ -59,6 +59,8 @@ class AirfoilTool(object):
 
     def airfoil_dialog(self):
         fn = QtGui.QFileDialog.getOpenFileName(caption='import airfoil')
+        if not fn[0]:
+            return
         commands.make_airfoil(fn[0])
         self.accept()
 
