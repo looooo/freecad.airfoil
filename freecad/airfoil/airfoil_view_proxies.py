@@ -12,7 +12,6 @@ import Part as part
 from freecad.airfoil import RESOURCE_PATH
 from freecad.airfoil import airfoil_proxies
 
-utils.add_marker_from_svg(os.path.join(RESOURCE_PATH, "custom_marker.svg"), "AIRFOIL_MARKER",  20)
 
 class ViewProviderAirfoil(object):
     def __init__(self, vobj):
@@ -20,6 +19,18 @@ class ViewProviderAirfoil(object):
 
     def getIcon(self):
         return os.path.join(RESOURCE_PATH, "airfoil.svg")
+
+    def setupContextMenu(self, view_obj, menu):
+        save_dat = menu.addAction("save as dat")
+        save_dat.triggered.connect(lambda f=self.save_dat, arg=view_obj.Object: f(arg))
+
+    # non-gui function
+    def save_dat(self, obj):
+        airfoil = obj.Proxy.get_airfoil(obj)
+        fn = QtGui.QFileDialog.getSaveFileName(caption='export airfoil')
+        if not fn[0]:
+            return
+        airfoil.export_dat(fn[0])
 
     def __getstate__(self):
         return None
@@ -35,10 +46,13 @@ class ViewProviderParafoil(object):
         return os.path.join(RESOURCE_PATH, "parafoil.svg")
 
     def setupContextMenu(self, view_obj, menu):
-        modify = menu.addAction("modify parafoil") 
-        create_airfoil = menu.addAction("airfoil from parafoil")
+        modify = menu.addAction("modify parafoil", os.path.join(RESOURCE_PATH, "calibrate.svg")) 
+        create_airfoil = menu.addAction("airfoil from parafoil", os.path.join(RESOURCE_PATH, "airfoil.svg"))
+        optimize = menu.addAction("optimze parafoil", os.path.join(RESOURCE_PATH, "optimize.svg"))
+
         modify.triggered.connect(lambda f=self.modify_parafoil, arg=view_obj.Object: f(arg))
         create_airfoil.triggered.connect(lambda f=self.airfoil_from_parafoil, arg=view_obj.Object: f(arg))
+        optimize.triggered.connect(lambda f=self.optimize_parafoil, arg=view_obj.Object: f(arg))
 
     def modify_parafoil(self, obj):
         modifier = ParafoilModifier(obj)
@@ -50,6 +64,10 @@ class ViewProviderParafoil(object):
         ViewProviderAirfoil(obj.ViewObject)
         # obj.Label = obj.Proxy.get_name(obj)
         app.activeDocument().recompute()
+
+    def optimize_parafoil(self, obj):
+        modifier = ParafoilOptimizer(obj)
+        gui.Control.showDialog(modifier)
 
     def __getstate__(self):
         return None
@@ -64,7 +82,6 @@ class ConstrainedMarker(graphics.Marker):
         self.pole_index = pole_index
         self.weight = weight
         self.upper = upper
-        self.marker.markerIndex = coin.SoMarkerSet.AIRFOIL_MARKER
 
     @property
     def points(self):
@@ -75,8 +92,8 @@ class ConstrainedMarker(graphics.Marker):
         point = [points[0][0], points[0][1], 0.]
         self.data.point.setValues(0, 1, [point])
         if hasattr(self, "poles"):
-            self.poles.point[self.pole_index].setValue([*(np.array(point) * self.weight), self.weight])
-            self.poles.point = self.poles.point
+           self.poles.point.setValues(self.pole_index, 1, 
+                                      [[*(np.array(point) * self.weight), self.weight]])
 
 class ConstrainedXMarker(ConstrainedMarker):
     @property
@@ -86,10 +103,10 @@ class ConstrainedXMarker(ConstrainedMarker):
     @points.setter
     def points(self, points):
         point = [points[0][0], points[0][1], 0.]
-        self.data.point.setValues(0, 1, [point]) 
+        self.data.point.setValues(0, 1, [point])
         if hasattr(self, "poles"):
-            self.poles.point[self.pole_index].setValue([*(np.array(point) * self.weight), self.weight])
-            self.poles.point = self.poles.point
+            self.poles.point.setValues(self.pole_index, 1, 
+                                       [[*(np.array(point) * self.weight), self.weight]])
         if hasattr(self, "tangent_point"):
             self.tangent_point.update_by_other(point)
 
@@ -103,8 +120,8 @@ class ConstrainedXMarker(ConstrainedMarker):
         pos = (direction * r).tolist()
         self.data.point.setValues(0, 1, [pos]) 
         if hasattr(self, "poles"):
-            self.poles.point[self.pole_index].setValue([*(np.array(pos) * self.weight), self.weight])
-            self.poles.point = self.poles.point
+            self.poles.point.setValues(self.pole_index, 1, 
+                                      [[*(np.array(pos) * self.weight), self.weight]])
 
 
 class ParafoilModifier(object):
@@ -244,7 +261,7 @@ class ParafoilModifier(object):
         spline_sep = coin.SoSeparator()
         upper_sep = coin.SoSeparator()
         lower_sep = coin.SoSeparator()
-        knot_vector = 5 * [0] + 2 * [1] + 2 * [2] + 5 * [3]
+        knot_vector = 5 * [0] + [0.2, 0.4, 0.6, 0.8] + 5 * [1]
         upper_curve = coin.SoNurbsCurve()
         lower_curve = coin.SoNurbsCurve()
         upper_curve.knotVector.setValues(0, len(knot_vector), knot_vector)
@@ -257,7 +274,6 @@ class ParafoilModifier(object):
         lower_line_set = coin.SoLineSet()
 
         # no need to set degree. Should be computed by numControlPoints and knotvector
-
         upper_sep += [complexity, upper_poles, upper_line_set, draw_style, upper_curve]
         lower_sep += [complexity, lower_poles, lower_line_set, draw_style, lower_curve]
         spline_sep += [upper_sep, lower_sep]
@@ -299,6 +315,8 @@ class ParafoilModifier(object):
         upper_array_temp = self.obj.upper_array
         lower_array_temp = self.obj.lower_array
         self.set_parafoil_from_current()
+
+
         if self.q_calibrate_x.isChecked() or self.q_calibrate_y.isChecked() or self.q_calibrate_w.isChecked():
             commands.calibrate_parafoil(self.q_calibrate_x.isChecked(), 
                                         self.q_calibrate_y.isChecked(), 
@@ -341,3 +359,109 @@ class ParafoilModifier(object):
         self.scene -= self.task_separator
         self.obj.ViewObject.show()
         gui.Control.closeDialog()
+
+
+class ParafoilOptimizer(object):
+    # draws airfoil for every new design
+    # buttons for different optimons (x, y, w optimisation)
+    def __init__(self, obj):
+        self.obj = obj  # self.obj.Proxy --> parafoil_proxy
+        self.form = []
+        self.scene = gui.activeDocument().activeView().getSceneGraph()
+        self.rm = gui.activeDocument().activeView().getViewer().getSoRenderManager()
+
+        # widget for modification
+        self.base_widget = QtGui.QWidget()
+        self.form.append(self.base_widget)
+        self.layout = QtGui.QFormLayout(self.base_widget)
+        self.base_widget.setWindowTitle("optimization")
+
+        self.setup_qt()
+
+
+    def setup_qt(self):
+        # create checkboxes: x, y, w
+        self.q_optimize_x = QtGui.QCheckBox("optimize x-values")
+        self.q_optimize_y = QtGui.QCheckBox("optimize y-values")
+        self.q_optimize_w = QtGui.QCheckBox("optimize weights")
+
+        self.q_optimize_y.setChecked(True)
+
+        # create button optimize
+        self.q_run = QtGui.QPushButton("run")
+        # self.q_run.clicked.connect(self._optimize)
+
+        self.target_table = QtGui.QTableWidget(10, 5)
+        self.target_table.setHorizontalHeaderItem(0, QtGui.QTableWidgetItem("type"))
+        self.target_table.setHorizontalHeaderItem(1, QtGui.QTableWidgetItem("cl"))
+        self.target_table.setHorizontalHeaderItem(2, QtGui.QTableWidgetItem("Re"))
+        self.target_table.setHorizontalHeaderItem(3, QtGui.QTableWidgetItem("weight"))
+        self.target_table.setHorizontalHeaderItem(4, QtGui.QTableWidgetItem("target value"))
+
+        self.layout.addWidget(self.target_table)
+        self.layout.addWidget(self.q_optimize_x)
+        self.layout.addWidget(self.q_optimize_y)
+        self.layout.addWidget(self.q_optimize_w)
+        self.layout.addWidget(self.q_run)
+
+        self.q_run.clicked.connect(self.optimize)
+
+    def table_to_function(self):
+        rows = self.target_table.rowCount()
+        cols = self.target_table.columnCount()
+        table = []
+        for i in range(rows):
+            row = []
+            for j in range(cols):
+                value = self.target_table.item(i, j)
+                if value:
+                    value = value.text()
+                    if value:
+                        if j == 0:
+                            row.append(str(value))
+                        else:
+                            row.append(float(value))
+            if row:
+                print(len(row))
+                if len(row) == 4:
+                    row.append(0)
+                print(row)
+                assert len(row) == 5
+                table.append(row)
+        print(table)
+        # create function
+
+        def target_function(airfoil):
+            def xfoil_foo(airfoil, cl_input, re):
+                from airfoil import XfoilCase
+                app.activeDocument().recompute()
+                gui.updateGui()
+                case = XfoilCase(airfoil)
+                params = XfoilCase.default_params
+                params["re"] = re
+                params["cl_input"] = cl_input
+                response = case.compute_coefficients(params)
+                print(response)
+                return response["cd"], response["cm"]
+
+            residuals = []
+            for row in table:
+                tp, cl, re, weight, target_value = row
+                cd, cm = xfoil_foo(airfoil, cl, re)
+                if row[0] == "cd_min":
+                    residuals.append(weight * cd)
+                elif row[0] == "glide_max":
+                    residuals.append(weight * cl / cd)
+                elif row[0] == "cm_target":
+                    residuals.append(cm - targetvalue)
+
+            return residuals
+
+        return target_function
+
+    def optimize(self):
+        opt_x = self.q_optimize_x.isChecked()
+        opt_y = self.q_optimize_y.isChecked()
+        opt_w = self.q_optimize_w.isChecked()
+        self.obj.Proxy.optimize(self.obj, self.table_to_function(), opt_x, opt_y, opt_w)
+

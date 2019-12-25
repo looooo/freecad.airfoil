@@ -27,7 +27,6 @@ class AirfoilCommand(object):
                 'ToolTip': "create an airfoil by different methods"}
 
 class AirfoilTool(object):
-    WIDGET_NAME = "airfoil tool"
     def __init__(self):
         self.form = []
         self.scene = gui.activeDocument().activeView().getSceneGraph()
@@ -35,7 +34,7 @@ class AirfoilTool(object):
         self.base_widget = QtGui.QWidget()
         self.form.append(self.base_widget)
         self.layout = QtGui.QFormLayout(self.base_widget)
-        self.base_widget.setWindowTitle(AirfoilTool.WIDGET_NAME)
+        self.base_widget.setWindowTitle("airfoil tool")
 
         # scene container
         self.task_separator = coin.SoSeparator()

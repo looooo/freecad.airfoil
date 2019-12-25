@@ -1,7 +1,9 @@
 import os
 import numpy as np
+from scipy.interpolate import interp1d
 
 from freecad import app
+import FreeCADGui as gui
 import Part as part
 
 from airfoil import Airfoil, XfoilStudy
@@ -42,15 +44,17 @@ class AirfoilProxy(object):
         return None
 
 class LinkedAirfoilProxy(AirfoilProxy):
-    def __init__(self, obj, parafoil, numpoints:int=50):
+    def __init__(self, obj, parafoil, numpoints:int=50, curvature_factor:float=0.5):
         obj.addProperty("App::PropertyLink", "parafoil", "airfoil properties", "link to parafoil")
         obj.addProperty("App::PropertyInteger", "numpoints", "airfoil properties", "number of coordiantes per side")
+        obj.addProperty("App::PropertyFloat", "curvature_factor", "airfoil properties", "0: const length, 1: fine at curvature")
         obj.parafoil = parafoil
         obj.numpoints = numpoints
+        obj.curvature_factor = curvature_factor
         obj.Proxy = self
 
     def get_airfoil(self, obj):
-        return obj.parafoil.Proxy.get_airfoil(obj.parafoil, obj.numpoints)
+        return obj.parafoil.Proxy.get_airfoil(obj.parafoil, obj.numpoints, obj.curvature_factor)
 
 
 class JoukowskyProxy(AirfoilProxy):
@@ -137,8 +141,8 @@ class ParafoilProxy(Airfoil):
         obj.lower_array = lower_array
         obj.Proxy = self
 
-    def get_airfoil(self, obj, numpoints=50, distribution=None):
-        coordinates = self.discretize(obj, numpoints)
+    def get_airfoil(self, obj, numpoints=50, curvature_factor=0.5):
+        coordinates = self.discretize(obj, numpoints, curvature_factor)
         return Airfoil(coordinates)
 
     def get_upper_array(self, obj):
@@ -187,7 +191,7 @@ class ParafoilProxy(Airfoil):
         """
         returns a FreeCAD NURBS object
         """
-        additional_knots = [0., 1. / 3., 1. / 3., 2. / 3., 2. / 3., 1.]
+        additional_knots = [0., 0.2, 0.4, 0.6, 0.8, 1.]
         bs = part.BSplineCurve()
         bs.increaseDegree(4)
         for k in additional_knots:
@@ -199,12 +203,29 @@ class ParafoilProxy(Airfoil):
             i += 1
         return bs
 
-    def discretize(self, obj, numpoints=100, distribution=None):
+    def discretize(self, obj, numpoints=100, curvature_factor=1):
         """returns an Airfoil"""
         upper_spline = self._spline_from_mat(self.get_upper_array(obj))
         lower_spline = self._spline_from_mat(self.get_lower_array(obj))
-        upper_points = upper_spline.discretize(numpoints)
-        lower_points = lower_spline.discretize(numpoints)
+
+        def compute_dist(spline):
+            std_dist = np.linspace(0, 1, numpoints)
+            length = np.array([spline.length(0, i) for i in std_dist])
+            length /= length[-1]
+            curvature = np.array([0.] + [spline.curvature(i) for i in std_dist])[:-1]
+            curvature = np.cumsum(curvature) 
+            curvature /= curvature[-1]
+            curvature *= curvature_factor
+            curvature += np.linspace(0, 1, numpoints)
+            curvature /= curvature[-1]
+            length_int = interp1d(length, std_dist)
+            curvature_int = interp1d(curvature, std_dist)
+            return curvature_int(length_int(std_dist))
+
+        upper_dist = compute_dist(upper_spline)
+        lower_dist = compute_dist(lower_spline)
+        upper_points = [upper_spline.value(i) for i in upper_dist]
+        lower_points = [lower_spline.value(i) for i in lower_dist]
         upper_points = [[i[0], i[1]] for i in upper_points]
         lower_points = [[i[0], i[1]] for i in lower_points]
         coordinates = upper_points[::-1] + lower_points[1:]
@@ -261,7 +282,8 @@ class ParafoilProxy(Airfoil):
             return residuals
 
         start_values = self._get_values(mapping, mat)
-        best = least_squares(cost_function, start_values, method="lm", args=(mat, coordinates))
+        best = least_squares(cost_function, start_values, bounds=bounds, method="dogbox",
+                             args=(mat, coordinates), gtol=1e-6, xtol=1e-6, verbose=2)
         mat = self._set_values(mapping, mat, best.x)
         return mat
 
@@ -269,12 +291,29 @@ class ParafoilProxy(Airfoil):
         """
         calibrates the splines to match the airfoil as good as possible (lstsq)
         """
+        mapping, lower_bounds_upper_spline, upper_bounds_upper_spline = self._get_bounds_and_mapping(calibrate_x, calibrate_y, calibrate_w, upper=True)
+        mapping, lower_bounds_lower_spline, upper_bounds_lower_spline = self._get_bounds_and_mapping(calibrate_x, calibrate_y, calibrate_w, upper=False)
+        bounds_upper_spline = (lower_bounds_upper_spline, upper_bounds_upper_spline)
+        bounds_lower_spline = (lower_bounds_lower_spline, upper_bounds_lower_spline)
+
+        upper_array = obj.Proxy.get_upper_array(obj)
+        lower_array = obj.Proxy.get_lower_array(obj)
+        new_upper_mat = self._calibrate_one_side(upper_array, mapping, bounds_upper_spline, airfoil.get_upper_data()[::-1])
+        new_lower_mat = self._calibrate_one_side(lower_array, mapping, bounds_lower_spline, airfoil.get_lower_data())
+        obj.upper_array = new_upper_mat.tolist()
+        obj.lower_array = new_lower_mat.tolist()
+
+    def _get_bounds_and_mapping(self, calibrate_x:bool=False, calibrate_y:bool=True, calibrate_w:bool=False, upper=True):
         x_lower_bounds = [0. ] * 6
         x_upper_bounds = [1. ] * 6
         y_lower_bounds = [-1.] * 7
         y_upper_bounds = [1. ] * 7
         w_lower_bounds = [0.1] * 7
         w_upper_bounds = [1.]  * 7
+        if upper:
+            y_lower_bounds[0] = 0
+        else:
+            y_upper_bounds[0] = 0
         upper_bounds = []
         lower_bounds = []
         mapping = []
@@ -291,15 +330,39 @@ class ParafoilProxy(Airfoil):
             lower_bounds += w_lower_bounds
             upper_bounds += w_upper_bounds
             mapping += self.w_mapping
+        return mapping, lower_bounds, upper_bounds
 
-        bounds = (lower_bounds, upper_bounds)
+
+    def optimize(self, obj, target_function, optimize_x, optimize_y, optimize_w, numpoints=50):
+        from scipy.optimize import least_squares
+        mapping, lower_bounds_upper_spline, upper_bounds_upper_spline = self._get_bounds_and_mapping(optimize_x, optimize_y, optimize_w, upper=True)
+        mapping, lower_bounds_lower_spline, upper_bounds_lower_spline = self._get_bounds_and_mapping(optimize_x, optimize_y, optimize_w, upper=False)
+
+        bounds = (lower_bounds_upper_spline + lower_bounds_lower_spline, 
+                  upper_bounds_upper_spline + upper_bounds_lower_spline)
 
         upper_array = obj.Proxy.get_upper_array(obj)
         lower_array = obj.Proxy.get_lower_array(obj)
-        new_upper_mat = self._calibrate_one_side(upper_array, mapping, bounds, airfoil.get_upper_data()[::-1])
-        new_lower_mat = self._calibrate_one_side(lower_array, mapping, bounds, airfoil.get_lower_data())
-        obj.upper_array = new_upper_mat.tolist()
-        obj.lower_array = new_lower_mat.tolist()
+
+        upper_start_values = self._get_values(mapping, upper_array)
+        lower_start_values = self._get_values(mapping, lower_array)
+        start_values = np.array(upper_start_values.tolist() + lower_start_values.tolist())
+
+        def cost_function(values):
+            upper_mat = self._set_values(mapping, upper_array, values[:int(len(values) / 2)])
+            lower_mat = self._set_values(mapping, lower_array, values[int(len(values) / 2):])
+            obj.upper_array = upper_mat.tolist()
+            obj.lower_array = lower_mat.tolist()
+            airfoil = self.get_airfoil(obj, numpoints)
+            try:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+                residuals = target_function(airfoil)
+            except Exception:
+                return 1.  # return a high value
+            return sum(residuals)
+            
+        best = least_squares(cost_function, start_values, bounds=bounds, method="dogbox",
+                             gtol=1e-6, xtol=1e-7, verbose=2)
+        return best
 
 
 
