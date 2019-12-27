@@ -203,23 +203,29 @@ class ParafoilProxy(Airfoil):
             i += 1
         return bs
 
-    def discretize(self, obj, numpoints=100, curvature_factor=1):
+    def discretize(self, obj, numpoints=300, curvature_factor=1):
         """returns an Airfoil"""
         upper_spline = self._spline_from_mat(self.get_upper_array(obj))
         lower_spline = self._spline_from_mat(self.get_lower_array(obj))
 
         def compute_dist(spline):
-            std_dist = np.linspace(0, 1, numpoints)
+            import matplotlib.pyplot as plt
+            std_dist = np.linspace(0, 1, 1000)
             length = np.array([spline.length(0, i) for i in std_dist])
             length /= length[-1]
+
+
             curvature = np.array([0.] + [spline.curvature(i) for i in std_dist])[:-1]
             curvature = np.cumsum(curvature) 
             curvature /= curvature[-1]
-            curvature *= curvature_factor
-            curvature += np.linspace(0, 1, numpoints)
+            curvature = curvature * curvature_factor + std_dist * (1 - curvature_factor)
             curvature /= curvature[-1]
+
             length_int = interp1d(length, std_dist)
             curvature_int = interp1d(curvature, std_dist)
+            plt.plot(std_dist, curvature_int(length_int(std_dist)))
+            plt.show()
+            std_dist = np.linspace(0, 1, numpoints)
             return curvature_int(length_int(std_dist))
 
         upper_dist = compute_dist(upper_spline)
