@@ -13,7 +13,7 @@ class AirfoilWorkbench(Gui.Workbench):
     MenuText = "airfoil workbench"
     ToolTip = "workbench for airfoil design, analysis and optimization"
     Icon = os.path.join(RESOURCE_PATH, "airfoil-workbench.svg")
-    toolbox = ["AirfoilCommand", "ParafoilCommand", "ParaFoilOptimize"]
+    toolbox = ["AirfoilCommand", "ParafoilCommand"]
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"
@@ -25,7 +25,6 @@ class AirfoilWorkbench(Gui.Workbench):
         """
         Gui.addCommand('AirfoilCommand', tasks.AirfoilCommand())
         Gui.addCommand('ParafoilCommand', tasks.ParafoilCommand())
-        Gui.addCommand('ParaFoilOptimize', tasks.ParaFoilOptimize())
 
         self.appendToolbar("Airfoil", self.toolbox)
         self.appendMenu("Airfoil", self.toolbox)

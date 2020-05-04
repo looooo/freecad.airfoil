@@ -1,2 +1,5 @@
 from .airfoil import Airfoil
-from .study import XfoilStudy, XfoilCase
+try:
+	from .study import XfoilStudy, XfoilCase
+except ImportError as e:
+	print("xfoil disabled due to ImportError: {}".format(e))

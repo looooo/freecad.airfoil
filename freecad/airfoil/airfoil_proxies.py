@@ -6,7 +6,7 @@ from freecad import app
 import FreeCADGui as gui
 import Part as part
 
-from airfoil import Airfoil, XfoilStudy
+from airfoil import Airfoil
 from freecad.airfoil import RESOURCE_PATH
 
 
@@ -209,7 +209,6 @@ class ParafoilProxy(Airfoil):
         lower_spline = self._spline_from_mat(self.get_lower_array(obj))
 
         def compute_dist(spline):
-            import matplotlib.pyplot as plt
             std_dist = np.linspace(0, 1, 1000)
             length = np.array([spline.length(0, i) for i in std_dist])
             length /= length[-1]
@@ -223,8 +222,6 @@ class ParafoilProxy(Airfoil):
 
             length_int = interp1d(length, std_dist)
             curvature_int = interp1d(curvature, std_dist)
-            plt.plot(std_dist, curvature_int(length_int(std_dist)))
-            plt.show()
             std_dist = np.linspace(0, 1, numpoints)
             return curvature_int(length_int(std_dist))
 

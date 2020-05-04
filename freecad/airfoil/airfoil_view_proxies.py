@@ -48,11 +48,16 @@ class ViewProviderParafoil(object):
     def setupContextMenu(self, view_obj, menu):
         modify = menu.addAction("modify parafoil", os.path.join(RESOURCE_PATH, "calibrate.svg")) 
         create_airfoil = menu.addAction("airfoil from parafoil", os.path.join(RESOURCE_PATH, "airfoil.svg"))
-        optimize = menu.addAction("optimze parafoil", os.path.join(RESOURCE_PATH, "optimize.svg"))
 
         modify.triggered.connect(lambda f=self.modify_parafoil, arg=view_obj.Object: f(arg))
         create_airfoil.triggered.connect(lambda f=self.airfoil_from_parafoil, arg=view_obj.Object: f(arg))
-        optimize.triggered.connect(lambda f=self.optimize_parafoil, arg=view_obj.Object: f(arg))
+        try:
+            import xfoil_interface_wrap
+        except ImportError:
+            pass
+        else:
+            optimize = menu.addAction("optimze parafoil", os.path.join(RESOURCE_PATH, "optimize.svg"))
+            optimize.triggered.connect(lambda f=self.optimize_parafoil, arg=view_obj.Object: f(arg))
 
     def modify_parafoil(self, obj):
         modifier = ParafoilModifier(obj)
